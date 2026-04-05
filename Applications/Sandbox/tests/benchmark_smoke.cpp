@@ -1,25 +1,19 @@
 #include <Unitest/Unitest.h>
 #include <Unitest/TestMacro.h>
-
 #include "NKLogger/NkLog.h"
+#include <chrono>
 
-#include <ctime>
+TEST_CASE(BenchmarkSuite, BenchmarkColorPack) {
+    constexpr int n = 1000000;
+    volatile unsigned int r = 0;
+    auto t0 = std::chrono::high_resolution_clock::now();
 
-TEST_CASE(SandboxBenchmark, ColorPackingLoop) {
-    constexpr int kIters = 1000000;
+    for (int i = 0; i < n; ++i)
+        r ^= ((i & 0xF0u) << 24) | ((i & 0x0Fu) << 16) | (((i*2u) & 0xFFu) << 8) | 0xAAu;
 
-    volatile unsigned int sink = 0;
-    const clock_t t0 = std::clock();
-    for (int i = 0; i < kIters; ++i) {
-        const unsigned int a = static_cast<unsigned int>(i);
-        sink ^= ((a & 0xFFu) << 24) | (((a * 3u) & 0xFFu) << 16) | (((a * 7u) & 0xFFu) << 8) | 0xFFu;
-    }
-    const clock_t t1 = std::clock();
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double ns = std::chrono::duration<double, std::nano>(t1 - t0).count();
 
-    const double ns =
-        (static_cast<double>(t1 - t0) * 1000000000.0) /
-        static_cast<double>(CLOCKS_PER_SEC);
     ASSERT_TRUE(ns > 0.0);
-    logger.Info("[Sandbox Benchmark] color packing: {0} ns total (sink={1})",
-                ns, static_cast<unsigned int>(sink));
+    logger.Info("[BenchmarkSuite] Color packing completed: {0} ns (r={1})", ns, r);
 }
