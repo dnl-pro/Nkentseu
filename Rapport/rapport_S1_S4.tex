@@ -1,0 +1,381 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\geometry{margin=2.2cm}
+
+% Colors
+\definecolor{nkblue}{RGB}{25, 60, 120}
+\definecolor{nkgray}{RGB}{245, 245, 248}
+\definecolor{codegray}{RGB}{240, 240, 240}
+\definecolor{codegreen}{RGB}{0, 120, 50}
+\definecolor{codepurple}{RGB}{120, 0, 120}
+
+% Section formatting
+\titleformat{\section}{\large\bfseries\color{nkblue}}{}{0em}{\thesection\quad}[\vspace{-4pt}\rule{\linewidth}{0.6pt}]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{\thesubsection\quad}
+
+% Code style
+\lstset{
+  backgroundcolor=\color{codegray},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{nkblue}\bfseries,
+  commentstyle=\color{codegreen},
+  stringstyle=\color{codepurple},
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!40},
+  framesep=4pt,
+  language=C++
+}
+
+% Header / Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textbf{Réalité Augmentée — NkMath from scratch}}
+\fancyhead[R]{\small Semestre 1 · Semaines 1–4}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% --------------------------------------------------
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Huge\bfseries\color{nkblue} Réalité Augmentée\\[6pt] \textit{from scratch}\par}
+  \vspace{0.5cm}
+  \rule{0.6\linewidth}{1.2pt}
+  \vspace{0.5cm}
+
+  {\large Rapport de synthèse — Semestres 1, Semaines 1 à 4\par}
+  \vspace{0.3cm}
+  {\normalsize Modules 01 à 04 · Bibliothèque mathématique \texttt{NkMath}\par}
+  \vspace{1cm}
+  {\small\textit{Règle absolue : Zéro bibliothèque tierce — C++17 + STL uniquement}\par}
+  \vspace{2cm}
+
+  \begin{tabular}{ll}
+    \textbf{Auteur du cours} & Teuguia Tadjuidje Rodolf Sédéris · Rihen \\
+    \textbf{Durée totale}    & 3 Semestres · 162h · 21 Modules \\
+    \textbf{Modules couverts} & M01 – M04 (Semaines 1–4) \\
+  \end{tabular}
+  \vfill
+\end{titlepage}
+
+% --------------------------------------------------
+\section*{Introduction}
+Ce rapport résume les quatre premières semaines du cours \textit{Réalité Augmentée from scratch}.
+L'objectif de ce semestre est de construire la bibliothèque mathématique \texttt{NkMath} intégralement
+en C++17, sans aucune dépendance externe. Chaque module pose une brique indispensable au
+pipeline AR complet : arithmétique flottante fiable, algèbre vectorielle, transformations matricielles
+et représentation des rotations par quaternions.
+
+\tableofcontents
+\newpage
+
+% ==================================================
+\section{Semaine 1 — Module 01 : IEEE 754 \& Arithmétique Flottante}
+\textit{Durée : 6 heures}
+
+\subsection{Pourquoi ce module est fondamental}
+Tout le pipeline AR manipule des flottants : coordonnées 3D, matrices de projection, résidus de
+calibration, valeurs de pixels. Une erreur d'arrondi invisible peut faire diverger des algorithmes
+itératifs (Levenberg-Marquardt), produire une homographie incorrecte, ou décaler une pose de
+plusieurs centimètres. Ce module est la fondation de tout code numérique fiable.
+
+\subsection{Représentation binaire IEEE 754}
+Un \texttt{float} 32 bits est découpé en trois champs :
+
+\begin{center}
+\begin{tabular}{lll}
+  \toprule
+  \textbf{Champ} & \textbf{Largeur} & \textbf{Rôle} \\
+  \midrule
+  Signe    & 1 bit   & 0 = positif, 1 = négatif \\
+  Exposant & 8 bits  & Valeur biaisée (biais = 127) \\
+  Mantisse & 23 bits & Fraction avec bit implicite \texttt{1.} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\[
+  \text{Valeur} = (-1)^{\text{signe}} \times 2^{\text{exposant} - 127} \times 1.\text{mantisse}
+\]
+
+Un \texttt{double} 64 bits porte 11 bits d'exposant et 52 bits de mantisse, soit environ 15–16 chiffres
+décimaux significatifs (contre 7–8 pour le \texttt{float}).
+
+En C++17, la seule façon légale d'accéder aux bits d'un flottant est via \texttt{std::memcpy} vers un
+entier, afin d'éviter tout comportement indéfini lié au \textit{strict aliasing}.
+
+\subsection{Valeurs spéciales}
+\begin{itemize}[noitemsep]
+  \item \textbf{$\pm$Inf} : exposant \texttt{0xFF}, mantisse nulle (ex. \texttt{1.0f/0.0f}).
+  \item \textbf{NaN} : exposant \texttt{0xFF}, mantisse non nulle ; \textit{contagieux} — toute opération
+        avec NaN produit NaN. La seule comparaison valide est \texttt{std::isnan(x)}, car \texttt{NaN != NaN} est toujours vrai.
+  \item \textbf{Subnormaux} : exposant \texttt{0x00}, mantisse non nulle — représentation des très
+        petits nombres au prix d'une perte de précision.
+  \item \textbf{$\pm$0} : deux patterns de bits distincts, mais mathématiquement égaux.
+\end{itemize}
+
+\subsection{Epsilon machine et ULP}
+\textbf{Epsilon machine} ($\varepsilon$) : plus petite valeur telle que $1.0 + \varepsilon \neq 1.0$.
+Pour \texttt{float}, $\varepsilon \approx 1.19\times10^{-7}$ ; pour \texttt{double},
+$\varepsilon \approx 2.22\times10^{-16}$.
+
+\textbf{ULP} (\textit{Unit in the Last Place}) : espacement entre deux flottants consécutifs au
+voisinage d'une valeur donnée. L'ULP \textit{varie} avec la magnitude : près de 1000, l'ULP est
+environ $1.22\times10^{-4}$, soit $10^3$ fois plus grand que près de 1.
+
+\subsection{Cancellation catastrophique}
+La soustraction de deux flottants presque égaux détruit presque tous les bits significatifs du
+résultat. C'est l'erreur la plus dangereuse du pipeline car elle est silencieuse (pas de NaN,
+pas d'Inf). Exemple : calculer la variance par la formule naïve
+$\frac{\sum x_i^2 - (\sum x_i)^2/n}{n-1}$
+peut produire une valeur \textit{négative} à cause de l'annulation.
+
+\textbf{Remède — Algorithme de Welford} : mise à jour incrémentale de la moyenne et de la
+variance qui n'effectue jamais de soustraction de grandes valeurs proches.
+
+\subsection{Sommation de Kahan}
+L'algorithme de Kahan compense les erreurs d'arrondi lors de la sommation de nombreux termes
+grâce à une variable de compensation qui capture les bits perdus à chaque addition. Sur un million
+de \texttt{0.1f}, \texttt{std::accumulate} donne une erreur de l'ordre de 11, tandis que Kahan
+donne un résultat correct à 6 chiffres significatifs.
+
+\subsection{Stratégie float/double dans NkMath}
+\begin{itemize}[noitemsep]
+  \item Calculs internes (matrices, SVD) : \textbf{double} pour la précision de calibration.
+  \item Upload GPU (\texttt{glVertexAttribPointer}, \texttt{glUniformMatrix4fv}) : \textbf{float},
+        car GLSL est optimisé pour le 32 bits.
+  \item Types exportés : \texttt{Vec3d} (double) et \texttt{Vec3f} (float) selon le contexte.
+\end{itemize}
+
+\subsection{Travaux pratiques}
+Les TP de cette semaine demandent : (1) implémenter \texttt{inspectFloat} pour visualiser les trois
+champs IEEE 754 de valeurs cibles ; (2) démontrer empiriquement les pertes de précision avec
+Kahan et Welford ; (3) créer le fichier \texttt{NkMath/Float.h} contenant toutes les fonctions
+utilitaires (\texttt{isFiniteValid}, \texttt{nearlyZero}, \texttt{approxEq}, \texttt{kahanSum}) avec
+au moins 30 tests unitaires.
+
+% ==================================================
+\section{Semaine 2 — Module 02 : Vecteurs — Vec2d, Vec3d, Vec4d}
+\textit{Durée : 9 heures}
+
+\subsection{Rôle des vecteurs dans le pipeline AR}
+Les vecteurs sont la structure de données la plus utilisée du pipeline. Chaque position dans
+l'espace est un \texttt{Vec3d}, chaque pixel est un \texttt{Vec2d}, chaque coordonnée homogène
+est un \texttt{Vec4d}. Un tableau de \texttt{Vec3d} peut être passé directement à
+\texttt{glVertexAttribPointer} \textit{sans copie} si le layout mémoire est correct, d'où l'usage
+de \texttt{static\_assert} sur \texttt{sizeof} et \texttt{offsetof}.
+
+\subsection{Vec2d}
+Structure avec deux \texttt{double} (x, y) continus en mémoire. Fournit :
+\begin{itemize}[noitemsep]
+  \item Opérateurs arithmétiques : \texttt{+}, \texttt{-}, \texttt{*}, \texttt{/}, composés, unaire.
+  \item Accès par index via \texttt{operator[]} (utilise le fait que les membres sont contigus).
+  \item \texttt{Norm()}, \texttt{Normalized()}, \texttt{IsNormalized()}.
+  \item \textbf{Dot product} : $a \cdot b = a_x b_x + a_y b_y = |a||b|\cos\theta$.
+  \item \textbf{Cross 2D} (scalaire) : $a_x b_y - a_y b_x$ — signe indique si $b$ est à gauche
+        ou à droite de $a$.
+  \item \textbf{Lerp} linéaire.
+\end{itemize}
+Garantie : \texttt{static\_assert(sizeof(Vec2d)==16)}.
+
+\subsection{Dot product — interprétation géométrique}
+\[
+  a \cdot b = |a||b|\cos\theta
+  \begin{cases}
+    = 0  & \Rightarrow \text{perpendiculaires} \\
+    > 0  & \Rightarrow \text{angle aigu} \\
+    < 0  & \Rightarrow \text{angle obtus}
+  \end{cases}
+\]
+Usages dans le pipeline : test face avant/arrière, éclairage de Phong, projection d'un point sur
+une droite, test d'appartenance à un plan.
+
+\subsection{Vec3d et cross product}
+Le \textbf{produit vectoriel} $a \times b$ produit un vecteur perpendiculaire à $a$ et $b$, dont la
+norme est $|a||b|\sin\theta$ (aire du parallélogramme). Il respecte la règle de la main droite et
+est \textit{non-commutatif} : $a \times b = -(b \times a)$.
+
+Formule explicite :
+\[
+  (a \times b) = \begin{pmatrix} a_y b_z - a_z b_y \\ a_z b_x - a_x b_z \\ a_x b_y - a_y b_x \end{pmatrix}
+\]
+
+\textbf{Projection et rejection} : décomposer un vecteur $a$ en composante parallèle et
+perpendiculaire à $b$ :
+\[
+  \text{proj}(a,b) = b \,\frac{a \cdot b}{|b|^2}, \qquad \text{reject}(a,b) = a - \text{proj}(a,b)
+\]
+
+\subsection{Gram-Schmidt — base orthonormale}
+À partir de trois vecteurs quelconques (non coplanaires), l'algorithme de Gram-Schmidt construit
+une base orthonormale $\{u, v, w\}$ en trois étapes : normaliser le premier vecteur, ôter sa
+composante du second puis normaliser, ôter les deux composantes du troisième puis normaliser.
+Utilisé pour construire la matrice \textit{LookAt} et la décomposition polaire (Module 05).
+
+\subsection{Vec4d — coordonnées homogènes}
+Les coordonnées homogènes unifient points et directions :
+\begin{itemize}[noitemsep]
+  \item $w = 1$ : \textbf{point} dans l'espace (la translation s'applique).
+  \item $w = 0$ : \textbf{direction} (la translation ne s'applique pas).
+\end{itemize}
+La déhomogénéisation se fait par \texttt{ToVec3()} : diviser $(x, y, z)$ par $w$.
+
+\subsection{Travaux pratiques}
+Les TP demandent : (1) implémenter \texttt{Vec2d} complet avec 20 tests unitaires sur le dot
+product, le cross 2D, la normalisation et l'accès par index ; (2) implémenter \texttt{Vec3d} avec
+cross product et Gram-Schmidt, testés sur des triplets aléatoires ; (3) projeter les 8 coins d'un
+cube unitaire en 2D via une projection perspective simple et tracer les 12 arêtes dans une image
+PPM 512×512.
+
+% ==================================================
+\section{Semaine 3 — Module 03 : Matrices — Mat3d, Mat4d}
+\textit{Durée : 9 heures}
+
+\subsection{Convention column-major — critique pour OpenGL}
+OpenGL stocke les matrices en \textbf{column-major} : dans un tableau linéaire, les éléments de la
+première colonne viennent en premier. L'accès C++ est \texttt{data[col*4 + row]}. Lors de
+l'upload GPU, \texttt{glUniformMatrix4fv} avec \texttt{GL\_FALSE} suppose déjà du column-major.
+Une transposition accidentelle produit des transformations complètement incorrectes.
+
+\subsection{Mat4d — structure et produit}
+\begin{itemize}[noitemsep]
+  \item Stockage : tableau \texttt{double data[16]} column-major.
+  \item \texttt{operator()(row, col)} : accès intuitif en notation mathématique.
+  \item Produit matriciel $4\times4$ : 64 multiplications et 48 additions.
+  \item \texttt{operator*(Vec4d)} : transformation d'un vecteur homogène.
+  \item \texttt{Transposed()}, \texttt{ToFloat(float[16])} pour l'upload GPU.
+\end{itemize}
+
+\subsection{Inverse par Gauss-Jordan avec pivot partiel}
+L'inversion opère sur la matrice augmentée $[M \mid I]$ :
+\begin{enumerate}[noitemsep]
+  \item Pour chaque colonne, trouver la ligne avec le plus grand coefficient en valeur absolue
+        (\textbf{pivot partiel}) et l'amener en position de pivot — réduit les erreurs numériques.
+  \item Normaliser la ligne pivot.
+  \item Éliminer la colonne courante dans toutes les autres lignes.
+  \item Extraire la partie droite $I \to M^{-1}$.
+\end{enumerate}
+La fonction retourne \texttt{false} si la matrice est singulière.
+
+\subsection{Matrice de rotation — formule de Rodrigues}
+Rotation d'angle $\theta$ autour d'un axe unitaire $\hat{n} = (n_x, n_y, n_z)$ :
+\[
+  R = I\cos\theta + (1-\cos\theta)\,\hat{n}\hat{n}^T + \sin\theta\,[\hat{n}]_\times
+\]
+En pratique, chacun des 9 coefficients est calculé explicitement à partir de $c = \cos\theta$,
+$s = \sin\theta$, $t = 1-c$.
+
+\subsection{Matrice View — LookAt}
+Construit la vue caméra à partir de trois vecteurs de l'espace monde :
+\begin{enumerate}[noitemsep]
+  \item $\hat{f} = \text{normalize}(\text{target} - \text{eye})$ — axe forward.
+  \item $\hat{r} = \text{normalize}(\hat{f} \times \text{worldUp})$ — axe right.
+  \item $\hat{u} = \hat{r} \times \hat{f}$ — axe up corrigé.
+\end{enumerate}
+La matrice View combine la rotation $[\hat{r}, \hat{u}, -\hat{f}]$ et la translation
+$(-\hat{r}\cdot\text{eye},\; -\hat{u}\cdot\text{eye},\; \hat{f}\cdot\text{eye})$.
+
+\subsection{TRS — Translation, Rotation, Scale}
+\[
+  M_{\text{TRS}} = T \times R \times S
+\]
+L'ordre est critique : d'abord l'échelle (locale), puis la rotation, puis la translation monde.
+Inverser cet ordre produit des transformations incorrectes (ex. une mise à l'échelle après rotation
+déforme l'objet dans l'espace monde).
+
+\subsection{Travaux pratiques}
+Les TP demandent : (1) implémenter \texttt{Mat4d} avec produit et inversion, vérifier
+$M \times M^{-1} = I$ ; (2) construire un rasteriseur logiciel dans une image PPM 512×512
+affichant les arêtes d'un cube animé via LookAt et projection perspective ; (3) implémenter TRS
+complet et vérifier la décomposition inverse sur 20 triplets aléatoires.
+
+% ==================================================
+\section{Semaine 4 — Module 04 : Quaternions}
+\textit{Durée : 6 heures}
+
+\subsection{Problème du gimbal lock}
+Les angles d'Euler (yaw, pitch, roll) souffrent du \textbf{gimbal lock} : lorsque le pitch
+atteint $\pm 90°$, les axes yaw et roll deviennent coplanaires et le système perd un degré de
+liberté. De plus, l'interpolation LERP entre deux orientations Euler ne suit pas le chemin le plus
+court sur la sphère des rotations, ce qui produit des mouvements non-naturels.
+
+\subsection{Définition et structure}
+Un quaternion $q = w + xi + yj + zk$ avec $i^2 = j^2 = k^2 = ijk = -1$.
+Un \textbf{quaternion unitaire} ($\|q\| = 1$) représente une rotation de $2\arccos(w)$ radians
+autour de l'axe $(x, y, z)$.
+
+Opérations fondamentales :
+\begin{itemize}[noitemsep]
+  \item \textbf{Conjugué} : $q^* = (w, -x, -y, -z)$ — inverse la rotation.
+  \item \textbf{Produit de Hamilton} : composition de rotations (non-commutatif).
+  \item Rotation d'un vecteur : $v' = q \otimes (0, v) \otimes q^*$, optimisée sans construire deux
+        quaternions intermédiaires.
+\end{itemize}
+
+Conversion axe-angle $\to$ quaternion :
+\[
+  q = \left(\cos\frac{\theta}{2},\; \hat{n}\sin\frac{\theta}{2}\right)
+\]
+
+\subsection{SLERP — interpolation sphérique}
+Le \textbf{SLERP} (\textit{Spherical Linear intERPolation}) suit le chemin le plus court sur la
+sphère des quaternions unitaires avec une vitesse angulaire \textit{constante} :
+\[
+  \text{Slerp}(a, b, t) = \frac{\sin((1-t)\Omega)}{\sin\Omega}\,a + \frac{\sin(t\Omega)}{\sin\Omega}\,b, \qquad \Omega = \arccos(a \cdot b)
+\]
+Lorsque $\Omega$ est très petit ($\cos\Omega > 0.9999$), on bascule vers un LERP normalisé pour
+éviter la division par zéro. Si $a \cdot b < 0$, on inverse $b$ pour prendre le chemin court.
+
+\subsection{Méthode de Shepperd — conversion Quat $\leftrightarrow$ Mat3}
+La conversion quaternion $\to$ matrice $3\times3$ est directe (9 produits). La conversion inverse
+(\textbf{méthode de Shepperd}) est numériquement stable car elle choisit, selon la trace de $R$,
+la composante dominante du quaternion pour éviter les divisions par de petites valeurs :
+\begin{itemize}[noitemsep]
+  \item \texttt{trace > 0} : calculer $w$ en priorité.
+  \item \texttt{R(0,0)} dominant : calculer $x$ en priorité.
+  \item Idem pour les cas $y$ et $z$ dominants.
+\end{itemize}
+
+\subsection{Travaux pratiques}
+Les TP demandent : (1) valider les quaternions (rotation, aller-retour Quat/Mat3, inverse) ;
+(2) animer en 60 frames une rotation entre deux orientations et comparer visuellement SLERP
+(vitesse angulaire uniforme) et LERP (vitesse non-uniforme) dans le rasteriseur logiciel du Module 03.
+
+% ==================================================
+\section*{Synthèse}
+\begin{center}
+\begin{tabular}{llll}
+  \toprule
+  \textbf{Semaine} & \textbf{Module} & \textbf{Durée} & \textbf{Apport clé} \\
+  \midrule
+  1 & IEEE 754 \& flottants    & 6h & Précision numérique, Kahan, Welford \\
+  2 & Vec2d, Vec3d, Vec4d      & 9h & Algèbre vectorielle, dot, cross, Gram-Schmidt \\
+  3 & Mat3d, Mat4d             & 9h & Transformations, Rodrigues, LookAt, TRS \\
+  4 & Quaternions              & 6h & Rotations stables, SLERP, Shepperd \\
+  \midrule
+  \multicolumn{2}{l}{\textbf{Total S1 (4 semaines)}} & \textbf{30h} & Bibliothèque \texttt{NkMath} — fondations \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Ces quatre modules forment le socle mathématique sur lequel reposent tous les algorithmes du
+pipeline AR : SVD (M05), détection de features (M07–08), calibration (M10–11), estimation de
+pose PnP (M15) et rendu OpenGL (M18–20).
+
+\end{document}
